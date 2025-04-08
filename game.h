@@ -15,7 +15,6 @@ class Game
     void init();
     void shutdown();
     void update(float deltaTime);
-    void draw_debug_grid();
     void draw();
     void tick(float deltaTime);
     void draw_health_bars(const std::vector<const Tank*>& sorted_tanks, const int team);
@@ -44,6 +43,9 @@ class Game
     }
 
   private:
+
+    ThreadPool* thread_pool;
+    std::mutex tanks_mutex; // For protecting tank updates
 
     void calculate_initial_routes();
     void handle_tank_collisions();

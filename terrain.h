@@ -26,6 +26,7 @@ namespace Tmpl8
         Terrain();
         void update();
         void draw(Surface* target) const;
+        //Use A* search to find shortest route to the destination
         vector<vec2> get_route(const Tank& tank, const vec2& target);
         float get_speed_modifier(const vec2& position) const;
 

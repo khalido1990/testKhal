@@ -5,11 +5,11 @@ namespace Tmpl8 {
     Grid::Grid(int screen_width, int screen_height, float cell_size)
         : width(screen_width), height(screen_height), cell_size(cell_size)
     {
-        // Bereken het aantal cellen in het grid
+        // Calculate the number of cells in the grid
         grid_width = (int)(width / cell_size) + 1;
         grid_height = (int)(height / cell_size) + 1;
 
-        // Initialiseer het grid met lege vectoren
+        // Initialize the grid with empty vectors
         grid_cells.resize(grid_width);
         for (int i = 0; i < grid_width; i++) {
             grid_cells[i].resize(grid_height);
@@ -18,16 +18,16 @@ namespace Tmpl8 {
 
     Grid::~Grid()
     {
-        // Grid hoeft geen geheugen vrij te maken omdat het alleen pointers bevat
-        // die verwijzen naar tanks die elders worden beheerd
+        // Grid doesn't need to free up memory because it only contains pointers
+        // that point to tanks managed elsewhere
     }
 
     void Grid::add_tanks(std::vector<Tank>& tanks)
     {
-        // Maak het grid eerst leeg
+        // Clear the grid first
         clear();
 
-        // Voeg elke tank toe aan het grid
+        // Add each tank to the grid
         for (auto& tank : tanks) {
             if (tank.active) {
                 std::array<int, 2> cell_idx = get_cell_index(tank.position);
@@ -40,31 +40,29 @@ namespace Tmpl8 {
 
     void Grid::update_tank_position(Tank& tank)
     {
-        // We moeten eerst de tank uit zijn oude positie verwijderen en dan aan de nieuwe toevoegen
-        // Dit is een simpele implementatie waarbij we het hele grid opnieuw opbouwen
-        // Een efficiëntere implementatie zou de oude positie bijhouden
+        // We first need to remove the tank from its old position and then add it to the new one
     }
 
     std::vector<Tank*> Grid::find_tanks_in_radius(const vec2& position, float radius, allignments alignment)
     {
         std::vector<Tank*> result;
 
-        // Bepaal de cellen die overlappen met de radius
+        // Determine the cells that overlap with the radius
         float radius_squared = radius * radius;
         int cell_radius = (int)(radius / cell_size) + 1;
 
         std::array<int, 2> center_cell = get_cell_index(position);
 
-        // Doorloop alle cellen binnen de radius
+        // Loop through all cells within the radius
         for (int dx = -cell_radius; dx <= cell_radius; dx++) {
             for (int dy = -cell_radius; dy <= cell_radius; dy++) {
                 int cell_x = center_cell[0] + dx;
                 int cell_y = center_cell[1] + dy;
 
                 if (is_valid_cell(cell_x, cell_y)) {
-                    // Doorloop alle tanks in deze cel
+                    // Go through all the tanks in this cell
                     for (Tank* tank : grid_cells[cell_x][cell_y]) {
-                        // Controleer of de tank binnen de radius ligt en de juiste allignment heeft
+                        // Check that the tank is within the radius and has the correct alignment
                         vec2 diff = tank->position - position;
                         if (diff.sqr_length() <= radius_squared &&
                             (alignment == tank->allignment || alignment == BLUE && tank->allignment == RED || alignment == RED && tank->allignment == BLUE)) {
@@ -83,16 +81,16 @@ namespace Tmpl8 {
         float closest_distance = std::numeric_limits<float>::infinity();
         Tank* closest_tank = nullptr;
 
-        // Bepaal de zoekradius (beginnen met een kleine waarde en vergroten indien nodig)
+        // Determine the search radius (start with a small value and increase if necessary)
         float search_radius = 50.0f;
-        const float max_search_radius = 1500.0f; // Maximum zoekafstand
+        const float max_search_radius = 1500.0f; // Maximum search distance
 
         while (search_radius <= max_search_radius) {
-            // Zoek tanks binnen de huidige radius
+            // Find tanks within current radius
             std::vector<Tank*> nearby_tanks = find_tanks_in_radius(current_tank.position, search_radius,
                 (current_tank.allignment == RED) ? BLUE : RED);
 
-            // Vind de dichtstbijzijnde tank
+            // Find the nearest tank
             for (Tank* tank : nearby_tanks) {
                 if (tank->active && tank->allignment != current_tank.allignment) {
                     float sqr_dist = (tank->position - current_tank.position).sqr_length();
@@ -103,20 +101,20 @@ namespace Tmpl8 {
                 }
             }
 
-            // Als we een tank hebben gevonden, stop met zoeken
+            // If we find a tank, stop looking
             if (closest_tank != nullptr) {
                 break;
             }
 
-            // Vergroot de zoekradius
+            // Increase the search radius
             search_radius *= 2.0f;
         }
 
-        // Als geen vijand gevonden is, neem de eerste actieve vijand (fallback)
+        // If no enemy found, take the first active enemy (fallback)
         if (closest_tank == nullptr) {
-            // Dit zou eigenlijk niet moeten gebeuren als er nog actieve vijanden zijn
-            // Maar als veiligheids-fallback is het goed
-            return nullptr; // De game class moet dit afhandelen
+            // This really shouldn't happen if there are still active enemies
+            // But as a safety fallback it's good
+            return nullptr; // The game class should handle this
         }
 
         return closest_tank;
@@ -124,17 +122,17 @@ namespace Tmpl8 {
 
     void Grid::calculate_tank_collisions(std::vector<Tank>& tanks)
     {
-        // Voeg alle tanks toe aan het grid
+        // Add all tanks to the grid
         add_tanks(tanks);
 
-        // Loop door alle actieve tanks
+        // Loop through all active tanks
         for (Tank& tank : tanks) {
             if (!tank.active) continue;
 
-            // Bepaal de huidige cel van de tank
+            // Determine the current cell of the tank
             std::array<int, 2> cell_idx = get_cell_index(tank.position);
 
-            // Controleer collision met tanks in dezelfde en aangrenzende cellen
+            // Check collision with tanks in the same and adjacent cells
             for (int dx = -1; dx <= 1; dx++) {
                 for (int dy = -1; dy <= 1; dy++) {
                     int neighbor_x = cell_idx[0] + dx;
@@ -142,12 +140,12 @@ namespace Tmpl8 {
 
                     if (!is_valid_cell(neighbor_x, neighbor_y)) continue;
 
-                    // Check alle tanks in deze cel
+                    // Check all tanks in this cell
                     for (Tank* other_tank : grid_cells[neighbor_x][neighbor_y]) {
-                        // Skip zichzelf en inactieve tanks
+                        // Skip itself and inactive tanks
                         if (&tank == other_tank || !other_tank->active) continue;
 
-                        // Bereken collision
+                        // Calculate collision
                         vec2 dir = tank.position - other_tank->position;
                         float dir_squared_len = dir.sqr_length();
 

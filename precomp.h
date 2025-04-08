@@ -57,6 +57,7 @@
 #include <mutex>
 #include <thread>
 #include <filesystem>
+#include <atomic>
 
 // Namespaced C headers:
 #include <cassert>

@@ -5,44 +5,44 @@ namespace Tmpl8 {
     // Forward declaration
     class Tank;
 
-    // Grid klasse voor spatial partitioning van de game objecten
-    // Dit versnelt collision detection en het vinden van nabije objecten aanzienlijk
+    // Grid class for spatial partitioning of the game objects
+    // This speeds up collision detection and finding nearby objects considerably
     class Grid
     {
     public:
-        // Initialiseer het grid met de gegeven afmetingen en celgrootte
+        // Initialize the grid with the given dimensions and cell size
         Grid(int screen_width, int screen_height, float cell_size);
         ~Grid();
 
-        // Voeg alle tanks toe aan het grid
+        // Add all tanks to the grid
         void add_tanks(std::vector<Tank>& tanks);
 
-        // Update de positie van een tank in het grid
+        // Update a tank's position in the grid
         void update_tank_position(Tank& tank);
 
-        // Vind tanks binnen een bepaalde straal rond een positie
+        // Find tanks within a certain radius around a position
         std::vector<Tank*> find_tanks_in_radius(const vec2& position, float radius, allignments alignment = BLUE);
 
-        // Vind de dichtstbijzijnde tank van een bepaalde allignment
+        // Find the nearest tank of a given alignment
         Tank* find_closest_enemy(const Tank& current_tank);
 
-        // Bereken botsingskrachten tussen tanks in het grid
+        // Calculate collision forces between tanks in the grid
         void calculate_tank_collisions(std::vector<Tank>& tanks);
 
-        // Maak het grid leeg
+        // Clear the grid
         void clear();
 
     private:
-        // Berekent de cel-index voor een gegeven positie
+        // Calculates the cell index for a given position
         std::array<int, 2> get_cell_index(const vec2& position) const;
 
-        // Controleer of een cel-index binnen de grenzen van het grid ligt
+        // Check if a cell index is within the boundaries of the grid
         bool is_valid_cell(int x, int y) const;
 
-        // Datastructuur voor het grid: een 2D vector van vectoren met pointers naar tanks
+        // Data structure for the grid: a 2D vector of vectors with pointers to tanks
         std::vector<std::vector<std::vector<Tank*>>> grid_cells;
 
-        // Afmetingen van het grid
+        // Dimensions of the grid
         int width, height;
         float cell_size;
         int grid_width, grid_height;

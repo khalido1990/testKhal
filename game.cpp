@@ -50,6 +50,14 @@ void Game::init()
 {
     frame_count_font = new Font("assets/digital_small.png", "ABCDEFGHIJKLMNOPQRSTUVWXYZ:?!=-0123456789.");
 
+    // Get number of hardware threads (cores)
+    unsigned int num_threads = std::thread::hardware_concurrency();
+    // Use at least 2 threads, but no more than what's available
+    num_threads = std::max(2u, num_threads);
+
+    // Create thread pool with the appropriate number of threads
+    thread_pool = new ThreadPool(num_threads);
+
     grid = new Grid(SCRWIDTH, SCRHEIGHT, 20.0f);
     tanks.reserve(num_tanks_blue + num_tanks_red);
 
@@ -86,6 +94,7 @@ void Game::init()
 // -----------------------------------------------------------
 void Game::shutdown()
 {
+    delete thread_pool;
 }
 
 // -----------------------------------------------------------
@@ -93,12 +102,12 @@ void Game::shutdown()
 // -----------------------------------------------------------
 Tank& Game::find_closest_enemy(Tank& current_tank)
 {
-    // Gebruik het grid om de dichtstbijzijnde vijand te vinden
+    // Use the grid to find the nearest enemy
     Tank* enemy = grid->find_closest_enemy(current_tank);
 
-    // Als geen vijand gevonden is (zou niet moeten gebeuren), val terug op de oude methode
+    // If no enemy is found (shouldn't happen), fall back to the old method
     if (enemy == nullptr) {
-        // Fallback op originele methode
+        // Fallback on original method
         float closest_distance = numeric_limits<float>::infinity();
         int closest_index = 0;
 
@@ -118,7 +127,7 @@ Tank& Game::find_closest_enemy(Tank& current_tank)
         return tanks.at(closest_index);
     }
 
-    // Anders, geef de gevonden vijand terug
+    // Otherwise, return the enemy you found
     return *enemy;
 }
 
@@ -152,26 +161,48 @@ void Game::handle_tank_collisions()
 // -----------------------------------------------------------
 void Game::update_tanks()
 {
-    for (Tank& tank : tanks)
+    const size_t num_tanks = tanks.size();
+    const size_t tanks_per_thread = 64; // Adjust batch size for better performance
+
+    std::vector<std::future<void>> futures;
+
+    // Process tanks in batches to reduce thread creation overhead
+    for (size_t i = 0; i < num_tanks; i += tanks_per_thread)
     {
-        if (!tank.active) continue;
+        size_t end = std::min(i + tanks_per_thread, num_tanks);
 
-        // Move tanks according to speed and nudges, also reload
-        tank.tick(background_terrain);
+        futures.push_back(thread_pool->enqueue([this, i, end]() {
+            for (size_t j = i; j < end; j++)
+            {
+                Tank& tank = tanks[j];
+                if (!tank.active) continue;
 
-        // Shoot at closest target if reloaded
-        if (tank.rocket_reloaded())
-        {
-            Tank& target = find_closest_enemy(tank);
+                // Move tanks according to speed and nudges, also reload
+                tank.tick(background_terrain);
 
-            rockets.push_back(Rocket(tank.position,
-                (target.get_position() - tank.position).normalized() * 3,
-                rocket_radius,
-                tank.allignment,
-                ((tank.allignment == RED) ? &rocket_red : &rocket_blue)));
+                // Shoot at closest target if reloaded
+                if (tank.rocket_reloaded())
+                {
+                    Tank& target = find_closest_enemy(tank);
 
-            tank.reload_rocket();
-        }
+                    // Protect rocket creation with a lock since we're modifying the rockets vector
+                    std::lock_guard<std::mutex> lock(tanks_mutex);
+                    rockets.push_back(Rocket(tank.position,
+                        (target.get_position() - tank.position).normalized() * 3,
+                        rocket_radius,
+                        tank.allignment,
+                        ((tank.allignment == RED) ? &rocket_red : &rocket_blue)));
+
+                    tank.reload_rocket();
+                }
+            }
+            }));
+    }
+
+    // Wait for all threads to complete
+    for (auto& future : futures)
+    {
+        future.wait();
     }
 }
 
@@ -284,30 +315,45 @@ void Game::calculate_forcefield_hull()
 // -----------------------------------------------------------
 void Game::update_rockets_tank_collisions()
 {
-    for (Rocket& rocket : rockets)
+    const size_t num_rockets = rockets.size();
+    std::vector<std::future<void>> futures;
+
+    // Process rockets in parallel
+    for (size_t i = 0; i < num_rockets; i++)
     {
-        if (!rocket.active) continue;
+        futures.push_back(thread_pool->enqueue([this, i]() {
+            Rocket& rocket = rockets[i];
+            if (!rocket.active) return;
 
-        rocket.tick();
+            rocket.tick();
 
-        // Check if rocket collides with enemy tank
-        for (Tank& tank : tanks)
-        {
-            if (!tank.active || tank.allignment == rocket.allignment) continue;
-
-            if (rocket.intersects(tank.position, tank.collision_radius))
+            // Check if rocket collides with enemy tank
+            for (Tank& tank : tanks)
             {
-                explosions.push_back(Explosion(&explosion, tank.position));
+                if (!tank.active || tank.allignment == rocket.allignment) continue;
 
-                if (tank.hit(rocket_hit_value))
+                if (rocket.intersects(tank.position, tank.collision_radius))
                 {
-                    smokes.push_back(Smoke(smoke, tank.position - vec2(7, 24)));
-                }
+                    // Need to protect access to explosions and smokes vectors
+                    std::lock_guard<std::mutex> lock(tanks_mutex);
+                    explosions.push_back(Explosion(&explosion, tank.position));
 
-                rocket.active = false;
-                break;
+                    if (tank.hit(rocket_hit_value))
+                    {
+                        smokes.push_back(Smoke(smoke, tank.position - vec2(7, 24)));
+                    }
+
+                    rocket.active = false;
+                    break;
+                }
             }
-        }
+            }));
+    }
+
+    // Wait for all collision detection to complete
+    for (auto& future : futures)
+    {
+        future.wait();
     }
 }
 
@@ -354,23 +400,36 @@ void Game::remove_inactive_rockets()
 // -----------------------------------------------------------
 void Game::update_particle_beams()
 {
-    for (Particle_beam& particle_beam : particle_beams)
+    std::vector<std::future<void>> futures;
+
+    for (size_t i = 0; i < particle_beams.size(); i++)
     {
-        particle_beam.tick(tanks);
+        futures.push_back(thread_pool->enqueue([this, i]() {
+            Particle_beam& particle_beam = particle_beams[i];
+            particle_beam.tick(tanks);
 
-        // Damage all tanks within the beam's damage window
-        for (Tank& tank : tanks)
-        {
-            if (!tank.active) continue;
-
-            if (particle_beam.rectangle.intersects_circle(tank.get_position(), tank.get_collision_radius()))
+            // Damage all tanks within the beam's damage window
+            for (Tank& tank : tanks)
             {
-                if (tank.hit(particle_beam.damage))
+                if (!tank.active) continue;
+
+                if (particle_beam.rectangle.intersects_circle(tank.get_position(), tank.get_collision_radius()))
                 {
-                    smokes.push_back(Smoke(smoke, tank.position - vec2(0, 48)));
+                    if (tank.hit(particle_beam.damage))
+                    {
+                        // Need to protect access to the smokes vector
+                        std::lock_guard<std::mutex> lock(tanks_mutex);
+                        smokes.push_back(Smoke(smoke, tank.position - vec2(0, 48)));
+                    }
                 }
             }
-        }
+            }));
+    }
+
+    // Wait for all beam updates to complete
+    for (auto& future : futures)
+    {
+        future.wait();
     }
 }
 
@@ -401,16 +460,36 @@ void Game::update(float deltaTime)
         calculate_initial_routes();
     }
 
-    // Update game entities in appropriate order
-    grid->add_tanks(tanks);  // Update grid FIRST
-    handle_tank_collisions();  // Then handle collisions using updated grid
+    // Update the grid with the current tank positions
+    grid->add_tanks(tanks);
+
+    // Handle tank collisions
+    handle_tank_collisions();
+
+    // Update tanks in parallel
     update_tanks();
-    update_smoke_plumes();
-    calculate_forcefield_hull();
+
+    // These can be done concurrently
+    auto smoke_future = thread_pool->enqueue([this]() { update_smoke_plumes(); });
+    auto forcefield_future = thread_pool->enqueue([this]() { calculate_forcefield_hull(); });
+
+    // Update rockets and handle their collisions
     update_rockets_tank_collisions();
+
+    // Wait for concurrent operations to complete
+    smoke_future.wait();
+    forcefield_future.wait();
+
+    // Check rockets against forcefield
     check_rockets_forcefield_collisions();
+
+    // Clean up inactive rockets
     remove_inactive_rockets();
+
+    // Update particle beams
     update_particle_beams();
+
+    // Update explosions
     update_explosions();
 }
 
