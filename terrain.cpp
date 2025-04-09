@@ -95,19 +95,28 @@ namespace Tmpl8
         }
     }
 
+    // A node used in the A* algorithm to represent a tile in the search
     struct Node
     {
-        TerrainTile* tile;
-        float g_cost;
-        float h_cost;
-        Node* parent;
+        TerrainTile* tile;   // Pointer to the tile this node represents
+        float g_cost;        // Cost from the start tile to this node
+        float h_cost;        // Estimated cost (heuristic) from this node to the target
+        Node* parent;        // Pointer to the previous node in the path
+
+        // Total estimated cost of the path through this node
         float f_cost() const { return g_cost + h_cost; }
     };
 
+
+    // Comparison function used in the priority queue to sort nodes by lowest f_cost
     struct Compare_nodes {
-        bool operator()(const Node* a, const Node* b) { return a->f_cost() > b->f_cost(); }
+        bool operator()(const Node* a, const Node* b) {
+            return a->f_cost() > b->f_cost(); // Lower f_cost has higher priority
+        }
     };
 
+
+    // Heuristic function: estimates distance from a to b using Manhattan distance
     float Terrain::heuristic(const TerrainTile* a, const TerrainTile* b) {
         return std::abs((float)a->position_x - b->position_x) +
             std::abs((float)a->position_y - b->position_y);
@@ -115,55 +124,74 @@ namespace Tmpl8
 
 	// A* pathfinding algorithm
     std::vector<vec2> Terrain::get_route(const Tank& tank, const vec2& target) {
+        // Convert pixel coordinates to grid indices (tile positions)
         size_t start_x = tank.position.x / sprite_size;
         size_t start_y = tank.position.y / sprite_size;
         size_t target_x = target.x / sprite_size;
         size_t target_y = target.y / sprite_size;
 
+        // Get pointers to the starting and target tiles
         TerrainTile* start_tile = &tiles[start_y][start_x];
         TerrainTile* target_tile = &tiles[target_y][target_x];
 
+        // Open set: priority queue for nodes to be evaluated (sorted by estimated cost)
         std::priority_queue<Node*, std::vector<Node*>, Compare_nodes> open_set;
+
+        // Map to store all created nodes for memory management and path lookup
         std::unordered_map<TerrainTile*, Node*> all_nodes;
 
+        // Create the starting node with g_cost = 0 and h_cost from heuristic
         Node* start_node = new Node{ start_tile, 0, heuristic(start_tile, target_tile), nullptr };
         open_set.push(start_node);
         all_nodes[start_tile] = start_node;
 
+        // Main loop: continue until there are no more nodes to evaluate
         while (!open_set.empty())
         {
+            // Get the node with the lowest estimated total cost (g + h)
             Node* current = open_set.top();
             open_set.pop();
 
+            // If we reached the goal, reconstruct the path
             if (current->tile == target_tile)
             {
                 std::vector<vec2> path;
                 while (current)
                 {
+                    // Convert tile coordinates back to pixel positions
                     path.emplace_back(current->tile->position_x * sprite_size,
                         current->tile->position_y * sprite_size);
                     current = current->parent;
                 }
+                // Reverse the path to start from the beginning
                 std::reverse(path.begin(), path.end());
 
+                // Free memory for all created nodes
                 for (auto& node : all_nodes) delete node.second;
-                return path;
+
+                return path; // Return the final path
             }
 
+            // Loop through all neighboring tiles (accessible neighbors)
             for (TerrainTile* neighbor : current->tile->exits)
             {
-                float new_g_cost = current->g_cost + 1.0f;
+                float new_g_cost = current->g_cost + 1.0f; // Cost from start to neighbor (assumes uniform cost)
+
+                // If neighbor has not been visited or a shorter path is found
                 if (!all_nodes.count(neighbor) || new_g_cost < all_nodes[neighbor]->g_cost)
                 {
+                    // Create a new node for this neighbor with updated costs and parent
                     Node* new_node = new Node{ neighbor, new_g_cost, heuristic(neighbor, target_tile), current };
-                    open_set.push(new_node);
-                    all_nodes[neighbor] = new_node;
+                    open_set.push(new_node); // Add it to the open set
+                    all_nodes[neighbor] = new_node; // Save it in the map
                 }
             }
         }
 
+        // No path found: clean up all allocated nodes
         for (auto& node : all_nodes) delete node.second;
-        return {};
+
+        return {}; // Return empty path if unreachable
     }
 
 	float Terrain::get_speed_modifier(const vec2& position) const {
@@ -181,8 +209,18 @@ namespace Tmpl8
 		}
 	}
 
-	bool Terrain::is_accessible(int y, int x) {
-		return y >= 0 && y < terrain_height && x >= 0 && x < terrain_width &&
-			tiles[y][x].tile_type != TileType::WATER;
-	}
+    bool Terrain::is_accessible(int y, int x)
+    {
+        //Bounds check
+        if ((x >= 0 && x < terrain_width) && (y >= 0 && y < terrain_height))
+        {
+            //Inaccessible terrain check
+            if (tiles.at(y).at(x).tile_type != TileType::MOUNTAINS && tiles.at(y).at(x).tile_type != TileType::WATER)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }

@@ -17,9 +17,6 @@ namespace Tmpl8 {
         // Add all tanks to the grid
         void add_tanks(std::vector<Tank>& tanks);
 
-        // Update a tank's position in the grid
-        void update_tank_position(Tank& tank);
-
         // Find tanks within a certain radius around a position
         std::vector<Tank*> find_tanks_in_radius(const vec2& position, float radius, allignments alignment = BLUE);
 

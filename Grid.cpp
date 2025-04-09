@@ -38,11 +38,6 @@ namespace Tmpl8 {
         }
     }
 
-    void Grid::update_tank_position(Tank& tank)
-    {
-        // We first need to remove the tank from its old position and then add it to the new one
-    }
-
     std::vector<Tank*> Grid::find_tanks_in_radius(const vec2& position, float radius, allignments alignment)
     {
         std::vector<Tank*> result;
